@@ -23,7 +23,7 @@
 ## 快速开始
 
 1. 直接访问 GitHub Pages（推荐）：  
-   https://github.com/JA-cool/WeChat_Article_Image_Extractor/index.html
+   [https://github.com/JA-cool/WeChat_Article_Image_Extractor/index.html](https://ja-cool.github.io/WeChat_Article_Image_Extractor/)
    或把 `index.html` 下载到本地双击打开。
 
 3. 把从公众号保存的 `.html` 文件拖进页面，或点击“选择文件”。
