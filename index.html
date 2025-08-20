@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>公众号文章图片解析与预览</title>
+	<style>
+		:root { color-scheme: light dark; }
+		body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Microsoft YaHei", "PingFang SC", sans-serif; margin: 0; padding: 24px; }
+		h1 { font-size: 20px; margin: 0 0 12px; }
+		p { margin: 0 0 16px; }
+		.container { max-width: 980px; margin: 0 auto; }
+		.card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+		.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
+		input[type="file"] { padding: 8px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; }
+		.button { cursor: pointer; padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f3f4f6; }
+		.small { color: #6b7280; font-size: 12px; }
+		#status { font-size: 13px; color: #374151; }
+		#preview { width: 100%; height: 78vh; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
+		.preview-container { display: flex; gap: 16px; margin-top: 16px; }
+		.article-preview { flex: 1; }
+		.image-preview { width: 300px; }
+		.image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; max-height: 60vh; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; background: #fafafa; }
+		.image-item { position: relative; border: 2px solid transparent; border-radius: 6px; overflow: hidden; cursor: pointer; transition: all 0.2s; background: #fff; }
+		.image-item:hover { border-color: #007bff; transform: scale(1.02); }
+		.image-item.selected { border-color: #28a745; background: #d4edda; }
+		.image-item img { width: 100%; height: 80px; object-fit: cover; display: block; }
+		.image-item .index { position: absolute; top: 2px; left: 2px; background: rgba(0,0,0,0.7); color: white; font-size: 10px; padding: 2px 4px; border-radius: 3px; }
+		.image-item .checkbox { position: absolute; top: 2px; right: 2px; width: 16px; height: 16px; }
+		.image-controls { margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+		.image-controls .button { font-size: 12px; padding: 6px 10px; }
+		footer { margin-top: 16px; color: #9ca3af; font-size: 12px; }
+		@media (prefers-color-scheme: dark) {
+			body { background: #0b0c0e; color: #e5e7eb; }
+			.card { background: #111316; border-color: #21252b; box-shadow: none; }
+			input[type="file"], .button { background: #0f1115; border-color: #21252b; color: #e5e7eb; }
+			#preview { background: #0f1115; border-color: #21252b; }
+			.image-grid { background: #1a1d21; border-color: #21252b; }
+			.image-item { background: #111316; }
+			.image-item.selected { background: #1e3a2e; }
+		}
+		@media (max-width: 768px) {
+			.preview-container { flex-direction: column; }
+			.image-preview { width: 100%; }
+		}
+	</style>
+</head>
+<body>
+	<div class="container">
+		<div class="card">
+			<h1>公众号 HTML 图片解析</h1>
+			<p class="small">上传从公众号保存的 .html 文件，自动把文章中的所有 <code>&lt;img data-src=...&gt;</code> 改为 <code>src</code> 并预览。</p>
+			<div class="controls">
+				<input id="fileInput" type="file" accept=".html,.htm,text/html" />
+				<button id="clearBtn" class="button" type="button">清空预览</button>
+				<button id="zipBtn" class="button" type="button" disabled>打包下载图片（ZIP，可能受CORS限制）</button>
+				<button id="psBtn" class="button" type="button" disabled>导出PowerShell下载脚本（推荐）</button>
+				<button id="htmlLocalBtn" class="button" type="button" disabled>导出重写HTML（指向本地 images/）</button>
+			</div>
+			<div id="status">未选择文件</div>
+		</div>
+
+		<div class="preview-container">
+			<div class="article-preview">
+				<iframe id="preview" referrerpolicy="no-referrer"></iframe>
+			</div>
+			<div class="image-preview">
+				<div class="image-controls">
+					<button id="selectAllBtn" class="button" disabled>全选</button>
+					<button id="deselectAllBtn" class="button" disabled>取消全选</button>
+					<button id="downloadSelectedBtn" class="button" disabled>下载选中</button>
+					<button id="zipSelectedBtn" class="button" disabled>打包选中</button>
+				</div>
+				<div id="imageGrid" class="image-grid">
+					<div style="text-align: center; color: #6b7280; padding: 20px;">暂无图片</div>
+				</div>
+			</div>
+		</div>
+		<footer>提示：不需要联网解析，处理在本地浏览器内完成；预览中的图片将直接从原图地址加载。<br>点击预览区中的任意图片可单独下载该图片。</footer>
+	</div>
+
+	<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+	<script>
+	(function() {
+		const fileInput = document.getElementById('fileInput');
+		const statusEl = document.getElementById('status');
+		const preview = document.getElementById('preview');
+		const clearBtn = document.getElementById('clearBtn');
+		const zipBtn = document.getElementById('zipBtn');
+		const psBtn = document.getElementById('psBtn');
+		const htmlLocalBtn = document.getElementById('htmlLocalBtn');
+		const selectAllBtn = document.getElementById('selectAllBtn');
+		const deselectAllBtn = document.getElementById('deselectAllBtn');
+		const downloadSelectedBtn = document.getElementById('downloadSelectedBtn');
+		const zipSelectedBtn = document.getElementById('zipSelectedBtn');
+		const imageGrid = document.getElementById('imageGrid');
+
+		let currentImageUrls = [];
+		let currentImageElements = [];
+		let selectedImages = new Set();
+
+		function setStatus(text) {
+			statusEl.textContent = text;
+		}
+
+		function readFileAsText(file) {
+			return new Promise((resolve, reject) => {
+				const reader = new FileReader();
+				reader.onload = () => resolve(reader.result);
+				reader.onerror = () => reject(reader.error || new Error('文件读取失败'));
+				reader.readAsText(file, 'utf-8');
+			});
+		}
+
+		function guessExtensionFromUrl(url) {
+			try {
+				const u = new URL(url, window.location.href);
+				const wxFmt = (u.searchParams.get('wx_fmt') || '').toLowerCase();
+				const known = ['png','jpg','jpeg','gif','webp','bmp','svg'];
+				if (wxFmt && known.includes(wxFmt)) return '.' + wxFmt;
+				const clean = u.pathname.split('/').pop() || '';
+				const dot = clean.lastIndexOf('.');
+				if (dot > -1 && dot < clean.length - 1) {
+					const ext = clean.substring(dot + 1).toLowerCase();
+					if (known.includes(ext)) return '.' + ext;
+				}
+			} catch (_) {
+				try {
+					const clean = url.split('#')[0].split('?')[0];
+					const dot = clean.lastIndexOf('.');
+					if (dot > -1 && dot < clean.length - 1) {
+						const ext = clean.substring(dot + 1).toLowerCase();
+						const known = ['png','jpg','jpeg','gif','webp','bmp','svg'];
+						if (known.includes(ext)) return '.' + ext;
+					}
+				} catch (__) {}
+			}
+			return '.jpg';
+		}
+
+		function processHtml(htmlString) {
+			const parser = new DOMParser();
+			const doc = parser.parseFromString(htmlString, 'text/html');
+
+			let replacedCount = 0;
+			const images = doc.querySelectorAll('img[data-src]');
+			images.forEach(img => {
+				const dataSrc = img.getAttribute('data-src');
+				if (dataSrc && dataSrc.trim()) {
+					img.setAttribute('src', dataSrc);
+					replacedCount++;
+				}
+				img.removeAttribute('data-src');
+			});
+
+			const allImgs = Array.from(doc.querySelectorAll('img[src]'));
+			const urls = allImgs.map((img) => {
+				const src = img.getAttribute('src');
+				return src;
+			}).filter(Boolean);
+
+			// 为所有图片添加点击事件和样式
+			allImgs.forEach((img, index) => {
+				img.style.cursor = 'pointer';
+				img.setAttribute('data-image-index', index);
+				img.setAttribute('title', `点击下载图片 ${index + 1}`);
+				img.style.border = '2px solid transparent';
+				img.style.transition = 'border-color 0.2s';
+				
+				// 添加悬停效果
+				img.addEventListener('mouseenter', function() {
+					this.style.borderColor = '#007bff';
+				});
+				img.addEventListener('mouseleave', function() {
+					this.style.borderColor = 'transparent';
+				});
+			});
+
+			const serialized = '<!DOCTYPE html>' + doc.documentElement.outerHTML;
+			return { html: serialized, replacedCount, urls };
+		}
+
+		async function handleFile(file) {
+			if (!file) return;
+			if (!/\.(html?|txt)$/i.test(file.name)) {
+				setStatus('文件类型可能不正确，已尝试继续处理...');
+			}
+			try {
+				setStatus('读取文件中...');
+				const raw = await readFileAsText(file);
+				setStatus('解析与替换中...');
+				const { html, replacedCount, urls } = processHtml(raw);
+				preview.srcdoc = html;
+				currentImageUrls = urls;
+				const info = `完成：已替换 ${replacedCount} 张图片的数据源为 src；检测到图片 ${urls.length} 张`;
+				setStatus(info);
+				const enabled = urls.length > 0;
+				zipBtn.disabled = !enabled;
+				psBtn.disabled = !enabled;
+				htmlLocalBtn.disabled = !enabled;
+				selectAllBtn.disabled = !enabled;
+				deselectAllBtn.disabled = !enabled;
+
+				// 设置预览区图片点击事件
+				setupPreviewImageClicks();
+				// 创建图片预览网格
+				createImageGrid(urls);
+			} catch (err) {
+				console.error(err);
+				setStatus('发生错误：' + (err && err.message ? err.message : String(err)));
+				zipBtn.disabled = true;
+				psBtn.disabled = true;
+				htmlLocalBtn.disabled = true;
+				selectAllBtn.disabled = true;
+				deselectAllBtn.disabled = true;
+			}
+		}
+
+		function createImageGrid(urls) {
+			if (!urls || urls.length === 0) {
+				imageGrid.innerHTML = '<div style="text-align: center; color: #6b7280; padding: 20px;">暂无图片</div>';
+				return;
+			}
+
+			imageGrid.innerHTML = '';
+			selectedImages.clear();
+
+			urls.forEach((url, index) => {
+				const item = document.createElement('div');
+				item.className = 'image-item';
+				item.setAttribute('data-index', index);
+				
+				const img = document.createElement('img');
+				img.src = url;
+				img.alt = `图片 ${index + 1}`;
+				img.title = `点击下载图片 ${index + 1}`;
+				
+				const indexLabel = document.createElement('div');
+				indexLabel.className = 'index';
+				indexLabel.textContent = index + 1;
+				
+				const checkbox = document.createElement('input');
+				checkbox.type = 'checkbox';
+				checkbox.className = 'checkbox';
+				checkbox.setAttribute('data-index', index);
+				
+				item.appendChild(img);
+				item.appendChild(indexLabel);
+				item.appendChild(checkbox);
+				imageGrid.appendChild(item);
+
+				// 点击图片下载
+				img.addEventListener('click', (e) => {
+					e.stopPropagation();
+					downloadSingleImage(url, index + 1);
+				});
+
+				// 点击复选框选择
+				checkbox.addEventListener('change', (e) => {
+					e.stopPropagation();
+					if (checkbox.checked) {
+						selectedImages.add(index);
+						item.classList.add('selected');
+					} else {
+						selectedImages.delete(index);
+						item.classList.remove('selected');
+					}
+					updateSelectionButtons();
+				});
+
+				// 点击整个项目切换选择
+				item.addEventListener('click', (e) => {
+					if (e.target !== checkbox && e.target !== img) {
+						checkbox.checked = !checkbox.checked;
+						checkbox.dispatchEvent(new Event('change'));
+					}
+				});
+			});
+		}
+
+		function updateSelectionButtons() {
+			const hasSelection = selectedImages.size > 0;
+			const allSelected = selectedImages.size === currentImageUrls.length;
+			
+			downloadSelectedBtn.disabled = !hasSelection;
+			zipSelectedBtn.disabled = !hasSelection;
+			selectAllBtn.textContent = allSelected ? '取消全选' : '全选';
+		}
+
+		function selectAllImages() {
+			const checkboxes = imageGrid.querySelectorAll('.checkbox');
+			const allSelected = selectedImages.size === currentImageUrls.length;
+			
+			checkboxes.forEach((checkbox, index) => {
+				if (allSelected) {
+					checkbox.checked = false;
+					selectedImages.delete(index);
+					checkbox.closest('.image-item').classList.remove('selected');
+				} else {
+					checkbox.checked = true;
+					selectedImages.add(index);
+					checkbox.closest('.image-item').classList.add('selected');
+				}
+			});
+			
+			updateSelectionButtons();
+		}
+
+		function downloadSelectedImages() {
+			const selectedUrls = Array.from(selectedImages).map(index => currentImageUrls[index]);
+			if (selectedUrls.length === 0) return;
+			
+			selectedUrls.forEach((url, i) => {
+				const originalIndex = Array.from(selectedImages)[i];
+				setTimeout(() => {
+					downloadSingleImage(url, originalIndex + 1);
+				}, i * 100); // 延迟下载避免浏览器限制
+			});
+		}
+
+		async function zipSelectedImages() {
+			const selectedUrls = Array.from(selectedImages).map(index => currentImageUrls[index]);
+			if (selectedUrls.length === 0) return;
+			
+			await downloadAsZip(selectedUrls);
+		}
+
+		function downloadBlob(blob, filename) {
+			const a = document.createElement('a');
+			const url = URL.createObjectURL(blob);
+			a.href = url;
+			a.download = filename;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			requestAnimationFrame(() => URL.revokeObjectURL(url));
+		}
+
+		function buildPowerShellScript(urls) {
+			const lines = [];
+			lines.push('$ErrorActionPreference = "Stop"');
+			lines.push('try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}');
+			lines.push('try { Add-Type -AssemblyName System.Web } catch {}');
+			lines.push('$headers = @{ "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"; "Referer" = "https://mp.weixin.qq.com" }');
+			lines.push('$urls = @(');
+			urls.forEach((u) => {
+				const escaped = u.replace(/`/g, '``').replace(/"/g, '\"');
+				lines.push(`"${escaped}"`);
+			});
+			lines.push(')');
+			lines.push('$dir = "images"');
+			lines.push('if (!(Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }');
+			lines.push('$i = 1');
+			lines.push('foreach ($u in $urls) {');
+			lines.push('	$noQuery = ($u -split "\\?")[0]');
+			lines.push('	$ext = [System.IO.Path]::GetExtension($noQuery)');
+			lines.push('	if ([string]::IsNullOrWhiteSpace($ext)) {');
+			lines.push('		$wxFmt = [System.Web.HttpUtility]::ParseQueryString(([Uri]$u).Query).Get("wx_fmt")');
+			lines.push('		if (-not [string]::IsNullOrWhiteSpace($wxFmt)) { $ext = "." + $wxFmt } else { $ext = ".jpg" }');
+			lines.push('	}');
+			lines.push('	$out = Join-Path $dir ("img_{0:D3}{1}" -f $i, $ext)');
+			lines.push('	Write-Host ("下载: {0} -> {1}" -f $u, $out)');
+			lines.push('	Invoke-WebRequest -Uri $u -Headers $headers -OutFile $out');
+			lines.push('	$i++');
+			lines.push('}');
+			return lines.join('\n');
+		}
+
+		function buildRewrittenHtmlForLocal(urls, baseHtml) {
+			const parser = new DOMParser();
+			const doc = parser.parseFromString(baseHtml, 'text/html');
+			const imgs = Array.from(doc.querySelectorAll('img[src]'));
+			const total = Math.min(imgs.length, urls.length);
+			for (let i = 0; i < total; i++) {
+				const ext = guessExtensionFromUrl(urls[i]);
+				const local = 'images/img_' + String(i + 1).padStart(3, '0') + ext;
+				imgs[i].setAttribute('src', local);
+				imgs[i].removeAttribute('crossorigin');
+			}
+			return '<!DOCTYPE html>' + doc.documentElement.outerHTML;
+		}
+
+		async function downloadAsZip(urls) {
+			if (!urls || urls.length === 0) {
+				setStatus('没有可下载的图片');
+				return;
+			}
+			if (!window.JSZip) {
+				setStatus('JSZip 未加载，无法打包');
+				return;
+			}
+			const zip = new JSZip();
+			let success = 0;
+			for (let index = 0; index < urls.length; index++) {
+				const url = urls[index];
+				const name = 'img_' + String(index + 1).padStart(3, '0') + guessExtensionFromUrl(url);
+				try {
+					setStatus(`下载中（${index + 1}/${urls.length}）：${url}`);
+					const resp = await fetch(url, { credentials: 'omit', cache: 'no-store' });
+					if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+					const blob = await resp.blob();
+					zip.file(name, blob);
+					success++;
+				} catch (e) {
+					console.warn('下载失败', url, e);
+				}
+			}
+			if (success === 0) {
+				setStatus('打包失败：可能被站点的跨域策略限制，建议使用“导出PowerShell下载脚本”');
+				return;
+			}
+			setStatus('正在生成 ZIP...');
+			const content = await zip.generateAsync({ type: 'blob' });
+			downloadBlob(content, 'images.zip');
+			setStatus(`完成：成功打包 ${success}/${urls.length} 张图片`);
+		}
+
+		function setupPreviewImageClicks() {
+			// 等待iframe加载完成
+			preview.onload = function() {
+				setTimeout(() => {
+					try {
+						const iframeDoc = preview.contentDocument || preview.contentWindow.document;
+						if (!iframeDoc) {
+							console.warn('无法访问iframe内容，尝试备用方法');
+							setupFallbackClickDetection();
+							return;
+						}
+						
+						const images = iframeDoc.querySelectorAll('img[src]');
+						console.log('找到图片数量:', images.length);
+						
+						images.forEach((img, index) => {
+							img.style.cursor = 'pointer';
+							img.setAttribute('data-image-index', index);
+							img.setAttribute('title', `点击下载图片 ${index + 1}`);
+							img.style.border = '2px solid transparent';
+							img.style.transition = 'border-color 0.2s';
+							
+							// 添加悬停效果
+							img.addEventListener('mouseenter', function() {
+								this.style.borderColor = '#007bff';
+							});
+							img.addEventListener('mouseleave', function() {
+								this.style.borderColor = 'transparent';
+							});
+							
+							// 移除之前的事件监听器（如果有）
+							img.removeEventListener('click', img._clickHandler);
+							
+							// 创建新的事件处理函数
+							img._clickHandler = function(e) {
+								e.preventDefault();
+								e.stopPropagation();
+								console.log('点击图片:', index + 1, img.src);
+								downloadSingleImage(img.src, index + 1);
+							};
+							
+							img.addEventListener('click', img._clickHandler);
+						});
+					} catch (e) {
+						console.warn('设置预览区图片点击事件失败:', e);
+						setupFallbackClickDetection();
+					}
+				}, 100); // 延迟100ms确保内容完全加载
+			};
+		}
+
+		function setupFallbackClickDetection() {
+			// 备用方法：监听iframe的点击事件
+			preview.addEventListener('click', function(e) {
+				// 计算点击位置相对于iframe的位置
+				const rect = preview.getBoundingClientRect();
+				const x = e.clientX - rect.left;
+				const y = e.clientY - rect.top;
+				
+				try {
+					const iframeDoc = preview.contentDocument || preview.contentWindow.document;
+					if (iframeDoc) {
+						const element = iframeDoc.elementFromPoint(x, y);
+						if (element && element.tagName === 'IMG') {
+							const index = element.getAttribute('data-image-index');
+							if (index !== null) {
+								console.log('备用方法检测到图片点击:', parseInt(index) + 1, element.src);
+								downloadSingleImage(element.src, parseInt(index) + 1);
+							}
+						}
+					}
+				} catch (e) {
+					console.warn('备用点击检测失败:', e);
+				}
+			});
+		}
+
+		async function downloadSingleImage(url, index) {
+			if (!url) {
+				setStatus('无效的图片地址');
+				return;
+			}
+			
+			try {
+				setStatus(`正在下载图片 ${index}...`);
+				const ext = guessExtensionFromUrl(url);
+				const filename = `img_${String(index).padStart(3, '0')}${ext}`;
+				
+				const response = await fetch(url, { 
+					credentials: 'omit', 
+					cache: 'no-store',
+					headers: {
+						'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+						'Referer': 'https://mp.weixin.qq.com'
+					}
+				});
+				
+				if (!response.ok) {
+					throw new Error(`HTTP ${response.status}`);
+				}
+				
+				const blob = await response.blob();
+				downloadBlob(blob, filename);
+				setStatus(`已下载图片 ${index}: ${filename}`);
+			} catch (error) {
+				console.error('下载失败:', error);
+				setStatus(`下载图片 ${index} 失败: ${error.message}`);
+			}
+		}
+
+		fileInput.addEventListener('change', () => {
+			const file = fileInput.files && fileInput.files[0];
+			if (file) {
+				setStatus(`已选择文件：${file.name}`);
+				handleFile(file);
+			}
+		});
+
+		zipBtn.addEventListener('click', () => {
+			downloadAsZip(currentImageUrls);
+		});
+
+		psBtn.addEventListener('click', () => {
+			if (!currentImageUrls || currentImageUrls.length === 0) {
+				setStatus('没有可导出的图片');
+				return;
+			}
+			const script = buildPowerShellScript(currentImageUrls);
+			const blob = new Blob([script], { type: 'text/plain;charset=utf-8' });
+			downloadBlob(blob, 'download_images.ps1');
+			setStatus('已导出 PowerShell 脚本（将下载到 images/ 文件夹）');
+		});
+
+		htmlLocalBtn.addEventListener('click', () => {
+			if (!currentImageUrls || currentImageUrls.length === 0) {
+				setStatus('没有可导出的图片');
+				return;
+			}
+			const baseHtml = preview.srcdoc || '<!DOCTYPE html><html><body>无内容</body></html>';
+			const rewritten = buildRewrittenHtmlForLocal(currentImageUrls, baseHtml);
+			const blob = new Blob([rewritten], { type: 'text/html;charset=utf-8' });
+			downloadBlob(blob, 'article_local.html');
+			setStatus('已导出重写后的 HTML（图片路径指向 images/）');
+		});
+
+		selectAllBtn.addEventListener('click', selectAllImages);
+		deselectAllBtn.addEventListener('click', () => {
+			selectedImages.clear();
+			const checkboxes = imageGrid.querySelectorAll('.checkbox');
+			checkboxes.forEach(checkbox => {
+				checkbox.checked = false;
+				checkbox.closest('.image-item').classList.remove('selected');
+			});
+			updateSelectionButtons();
+		});
+		downloadSelectedBtn.addEventListener('click', downloadSelectedImages);
+		zipSelectedBtn.addEventListener('click', zipSelectedImages);
+
+		clearBtn.addEventListener('click', () => {
+			preview.removeAttribute('src');
+			preview.srcdoc = '';
+			fileInput.value = '';
+			currentImageUrls = [];
+			selectedImages.clear();
+			zipBtn.disabled = true;
+			psBtn.disabled = true;
+			htmlLocalBtn.disabled = true;
+			selectAllBtn.disabled = true;
+			deselectAllBtn.disabled = true;
+			downloadSelectedBtn.disabled = true;
+			zipSelectedBtn.disabled = true;
+			imageGrid.innerHTML = '<div style="text-align: center; color: #6b7280; padding: 20px;">暂无图片</div>';
+			setStatus('已清空预览');
+		});
+
+		// 支持拖拽
+		document.addEventListener('dragover', (e) => {
+			e.preventDefault();
+		});
+		document.addEventListener('drop', (e) => {
+			e.preventDefault();
+			const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+			if (file) {
+				setStatus(`已选择文件：${file.name}`);
+				handleFile(file);
+			}
+		});
+	})();
+	</script>
+</body>
+</html> 
