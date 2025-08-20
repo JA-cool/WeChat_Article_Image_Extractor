@@ -76,7 +76,7 @@
 				</div>
 			</div>
 		</div>
-		<footer>提示：不需要联网解析，处理在本地浏览器内完成；预览中的图片将直接从原图地址加载。<br>点击预览区中的任意图片可单独下载该图片。</footer>
+		<footer>提示：不需要联网解析，处理在本地浏览器内完成；预览中的图片将直接从原图地址加载。<br>点击预览区中的任意图片可单独下载该图片。<br>在GitHub Pages等HTTPS环境下，浏览器可能阻止HTTP图片下载，建议使用"导出PowerShell下载脚本"功能。</footer>
 	</div>
 
 	<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
@@ -314,11 +314,19 @@
 			const selectedUrls = Array.from(selectedImages).map(index => currentImageUrls[index]);
 			if (selectedUrls.length === 0) return;
 			
+			// 检查是否在 HTTPS 环境下有 HTTP 链接
+			const hasHttpUrls = window.location.protocol === 'https:' && selectedUrls.some(url => url.startsWith('http:'));
+			if (hasHttpUrls) {
+				setStatus('检测到 HTTPS 环境下的 HTTP 图片链接，浏览器可能阻止下载。建议使用"导出PowerShell下载脚本"功能。');
+				return;
+			}
+			
+			setStatus(`开始下载 ${selectedUrls.length} 张选中图片...`);
 			selectedUrls.forEach((url, i) => {
 				const originalIndex = Array.from(selectedImages)[i];
 				setTimeout(() => {
 					downloadSingleImage(url, originalIndex + 1);
-				}, i * 100); // 延迟下载避免浏览器限制
+				}, i * 200); // 增加延迟避免浏览器限制
 			});
 		}
 
@@ -395,30 +403,56 @@
 				setStatus('JSZip 未加载，无法打包');
 				return;
 			}
+			
+			// 检查是否在 HTTPS 环境下有 HTTP 链接
+			const hasHttpUrls = window.location.protocol === 'https:' && urls.some(url => url.startsWith('http:'));
+			if (hasHttpUrls) {
+				setStatus('检测到 HTTPS 环境下的 HTTP 图片链接，浏览器可能阻止下载。建议使用"导出PowerShell下载脚本"功能。');
+				return;
+			}
+			
 			const zip = new JSZip();
 			let success = 0;
+			let failed = 0;
+			
 			for (let index = 0; index < urls.length; index++) {
 				const url = urls[index];
 				const name = 'img_' + String(index + 1).padStart(3, '0') + guessExtensionFromUrl(url);
 				try {
 					setStatus(`下载中（${index + 1}/${urls.length}）：${url}`);
-					const resp = await fetch(url, { credentials: 'omit', cache: 'no-store' });
+					
+					// 处理 HTTPS/HTTP 混合内容问题
+					let fetchUrl = url;
+					if (window.location.protocol === 'https:' && url.startsWith('http:')) {
+						fetchUrl = url.replace('http:', 'https:');
+					}
+					
+					const resp = await fetch(fetchUrl, { 
+						credentials: 'omit', 
+						cache: 'no-store',
+						mode: 'cors',
+						headers: {
+							'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+							'Referer': 'https://mp.weixin.qq.com'
+						}
+					});
 					if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 					const blob = await resp.blob();
 					zip.file(name, blob);
 					success++;
 				} catch (e) {
 					console.warn('下载失败', url, e);
+					failed++;
 				}
 			}
 			if (success === 0) {
-				setStatus('打包失败：可能被站点的跨域策略限制，建议使用“导出PowerShell下载脚本”');
+				setStatus('打包失败：可能被站点的跨域策略限制或HTTPS环境限制，建议使用"导出PowerShell下载脚本"');
 				return;
 			}
 			setStatus('正在生成 ZIP...');
 			const content = await zip.generateAsync({ type: 'blob' });
 			downloadBlob(content, 'images.zip');
-			setStatus(`完成：成功打包 ${success}/${urls.length} 张图片`);
+			setStatus(`完成：成功打包 ${success}/${urls.length} 张图片${failed > 0 ? `，失败 ${failed} 张` : ''}`);
 		}
 
 		function setupPreviewImageClicks() {
@@ -511,9 +545,17 @@
 				const ext = guessExtensionFromUrl(url);
 				const filename = `img_${String(index).padStart(3, '0')}${ext}`;
 				
-				const response = await fetch(url, { 
+				// 处理 HTTPS/HTTP 混合内容问题
+				let fetchUrl = url;
+				if (window.location.protocol === 'https:' && url.startsWith('http:')) {
+					// 尝试将 HTTP 转换为 HTTPS
+					fetchUrl = url.replace('http:', 'https:');
+				}
+				
+				const response = await fetch(fetchUrl, { 
 					credentials: 'omit', 
 					cache: 'no-store',
+					mode: 'cors',
 					headers: {
 						'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
 						'Referer': 'https://mp.weixin.qq.com'
@@ -529,7 +571,13 @@
 				setStatus(`已下载图片 ${index}: ${filename}`);
 			} catch (error) {
 				console.error('下载失败:', error);
-				setStatus(`下载图片 ${index} 失败: ${error.message}`);
+				
+				// 如果是 HTTPS 环境下的 HTTP 请求失败，尝试使用代理
+				if (window.location.protocol === 'https:' && url.startsWith('http:')) {
+					setStatus(`图片 ${index} 下载失败（HTTPS环境限制），建议使用PowerShell脚本下载`);
+				} else {
+					setStatus(`下载图片 ${index} 失败: ${error.message}`);
+				}
 			}
 		}
 
