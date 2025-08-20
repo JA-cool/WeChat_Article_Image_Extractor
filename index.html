@@ -56,7 +56,6 @@
 				<button id="zipBtn" class="button" type="button" disabled>打包下载图片（ZIP，可能受CORS限制）</button>
 				<button id="psBtn" class="button" type="button" disabled>导出PowerShell下载脚本（推荐）</button>
 				<button id="htmlLocalBtn" class="button" type="button" disabled>导出重写HTML（指向本地 images/）</button>
-				<button id="markdownBtn" class="button" type="button" disabled>导出Markdown（支持Typora预览）</button>
 			</div>
 			<div id="status">未选择文件</div>
 		</div>
@@ -77,7 +76,7 @@
 				</div>
 			</div>
 		</div>
-		<footer>提示：不需要联网解析，处理在本地浏览器内完成；预览中的图片将直接从原图地址加载。<br>点击预览区中的任意图片可单独下载该图片。<br>在GitHub Pages等HTTPS环境下，系统会自动使用代理服务来下载HTTP图片。<br>支持导出Markdown格式，可在Typora等软件中预览和编辑。</footer>
+		<footer>提示：不需要联网解析，处理在本地浏览器内完成；预览中的图片将直接从原图地址加载。<br>点击预览区中的任意图片可单独下载该图片。</footer>
 	</div>
 
 	<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
@@ -90,7 +89,6 @@
 		const zipBtn = document.getElementById('zipBtn');
 		const psBtn = document.getElementById('psBtn');
 		const htmlLocalBtn = document.getElementById('htmlLocalBtn');
-		const markdownBtn = document.getElementById('markdownBtn');
 		const selectAllBtn = document.getElementById('selectAllBtn');
 		const deselectAllBtn = document.getElementById('deselectAllBtn');
 		const downloadSelectedBtn = document.getElementById('downloadSelectedBtn');
@@ -161,15 +159,13 @@
 				return src;
 			}).filter(Boolean);
 
-			// 为所有图片添加点击事件和样式，并解决防盗链问题
+			// 为所有图片添加点击事件和样式
 			allImgs.forEach((img, index) => {
 				img.style.cursor = 'pointer';
 				img.setAttribute('data-image-index', index);
 				img.setAttribute('title', `点击下载图片 ${index + 1}`);
 				img.style.border = '2px solid transparent';
 				img.style.transition = 'border-color 0.2s';
-				// 添加 referrerpolicy="no-referrer" 解决微信防盗链问题
-				img.setAttribute('referrerpolicy', 'no-referrer');
 				
 				// 添加悬停效果
 				img.addEventListener('mouseenter', function() {
@@ -202,7 +198,6 @@
 				zipBtn.disabled = !enabled;
 				psBtn.disabled = !enabled;
 				htmlLocalBtn.disabled = !enabled;
-				markdownBtn.disabled = !enabled;
 				selectAllBtn.disabled = !enabled;
 				deselectAllBtn.disabled = !enabled;
 
@@ -216,7 +211,6 @@
 				zipBtn.disabled = true;
 				psBtn.disabled = true;
 				htmlLocalBtn.disabled = true;
-				markdownBtn.disabled = true;
 				selectAllBtn.disabled = true;
 				deselectAllBtn.disabled = true;
 			}
@@ -240,8 +234,6 @@
 				img.src = url;
 				img.alt = `图片 ${index + 1}`;
 				img.title = `点击下载图片 ${index + 1}`;
-				// 添加 referrerpolicy="no-referrer" 解决微信防盗链问题
-				img.setAttribute('referrerpolicy', 'no-referrer');
 				
 				const indexLabel = document.createElement('div');
 				indexLabel.className = 'index';
@@ -318,12 +310,11 @@
 			const selectedUrls = Array.from(selectedImages).map(index => currentImageUrls[index]);
 			if (selectedUrls.length === 0) return;
 			
-			setStatus(`开始下载 ${selectedUrls.length} 张选中图片...`);
 			selectedUrls.forEach((url, i) => {
 				const originalIndex = Array.from(selectedImages)[i];
 				setTimeout(() => {
 					downloadSingleImage(url, originalIndex + 1);
-				}, i * 300); // 增加延迟避免浏览器限制
+				}, i * 100); // 延迟下载避免浏览器限制
 			});
 		}
 
@@ -385,136 +376,8 @@
 				const local = 'images/img_' + String(i + 1).padStart(3, '0') + ext;
 				imgs[i].setAttribute('src', local);
 				imgs[i].removeAttribute('crossorigin');
-				// 添加 referrerpolicy="no-referrer" 解决微信防盗链问题
-				imgs[i].setAttribute('referrerpolicy', 'no-referrer');
 			}
 			return '<!DOCTYPE html>' + doc.documentElement.outerHTML;
-		}
-
-		function buildMarkdownContent(urls) {
-			const parser = new DOMParser();
-			const doc = parser.parseFromString(preview.srcdoc || '<!DOCTYPE html><html><body>无内容</body></html>', 'text/html');
-			
-			let markdown = '';
-			
-			// 提取标题
-			const title = doc.querySelector('h1, h2, h3, h4, h5, h6')?.textContent?.trim() || '公众号文章';
-			markdown += `# ${title}\n\n`;
-			
-			// 添加时间戳
-			const now = new Date();
-			markdown += `> 导出时间：${now.toLocaleString('zh-CN')}\n\n`;
-			
-			// 处理正文内容
-			const body = doc.querySelector('body');
-			if (body) {
-				// 移除脚本和样式标签
-				const scripts = body.querySelectorAll('script, style');
-				scripts.forEach(el => el.remove());
-				
-				// 处理所有元素
-				const elements = Array.from(body.children);
-				let imgIndex = 0;
-				
-				elements.forEach(element => {
-					const tagName = element.tagName.toLowerCase();
-					const text = element.textContent?.trim();
-					
-					if (!text) return;
-					
-					switch (tagName) {
-						case 'h1':
-						case 'h2':
-						case 'h3':
-						case 'h4':
-						case 'h5':
-						case 'h6':
-							const level = tagName.charAt(1);
-							markdown += `${'#'.repeat(parseInt(level))} ${text}\n\n`;
-							break;
-							
-						case 'p':
-							// 检查是否包含图片
-							const img = element.querySelector('img');
-							if (img && imgIndex < urls.length) {
-								const ext = guessExtensionFromUrl(urls[imgIndex]);
-								const localPath = `images/img_${String(imgIndex + 1).padStart(3, '0')}${ext}`;
-								markdown += `![图片${imgIndex + 1}](${localPath})\n\n`;
-								imgIndex++;
-							} else {
-								markdown += `${text}\n\n`;
-							}
-							break;
-							
-						case 'div':
-							// 检查是否包含图片
-							const divImg = element.querySelector('img');
-							if (divImg && imgIndex < urls.length) {
-								const ext = guessExtensionFromUrl(urls[imgIndex]);
-								const localPath = `images/img_${String(imgIndex + 1).padStart(3, '0')}${ext}`;
-								markdown += `![图片${imgIndex + 1}](${localPath})\n\n`;
-								imgIndex++;
-							} else if (text) {
-								markdown += `${text}\n\n`;
-							}
-							break;
-							
-						case 'img':
-							if (imgIndex < urls.length) {
-								const ext = guessExtensionFromUrl(urls[imgIndex]);
-								const localPath = `images/img_${String(imgIndex + 1).padStart(3, '0')}${ext}`;
-								markdown += `![图片${imgIndex + 1}](${localPath})\n\n`;
-								imgIndex++;
-							}
-							break;
-							
-						case 'ul':
-						case 'ol':
-							const items = element.querySelectorAll('li');
-							items.forEach(item => {
-								const itemText = item.textContent?.trim();
-								if (itemText) {
-									markdown += `- ${itemText}\n`;
-								}
-							});
-							markdown += '\n';
-							break;
-							
-						case 'blockquote':
-							markdown += `> ${text}\n\n`;
-							break;
-							
-						case 'strong':
-						case 'b':
-							markdown += `**${text}**\n\n`;
-							break;
-							
-						case 'em':
-						case 'i':
-							markdown += `*${text}*\n\n`;
-							break;
-							
-						default:
-							if (text) {
-								markdown += `${text}\n\n`;
-							}
-					}
-				});
-			}
-			
-			// 添加图片说明
-			if (urls.length > 0) {
-				markdown += `\n---\n\n## 图片说明\n\n`;
-				markdown += `本文共包含 ${urls.length} 张图片，已按顺序重命名为：\n\n`;
-				urls.forEach((url, index) => {
-					const ext = guessExtensionFromUrl(url);
-					const filename = `img_${String(index + 1).padStart(3, '0')}${ext}`;
-					markdown += `- ${filename}\n`;
-				});
-				markdown += `\n> 请确保将图片文件放在 \`images/\` 文件夹中，与 Markdown 文件在同一目录。\n`;
-			}
-			
-			return markdown;
 		}
 
 		async function downloadAsZip(urls) {
@@ -526,69 +389,30 @@
 				setStatus('JSZip 未加载，无法打包');
 				return;
 			}
-			
 			const zip = new JSZip();
 			let success = 0;
-			let failed = 0;
-			
 			for (let index = 0; index < urls.length; index++) {
 				const url = urls[index];
 				const name = 'img_' + String(index + 1).padStart(3, '0') + guessExtensionFromUrl(url);
 				try {
 					setStatus(`下载中（${index + 1}/${urls.length}）：${url}`);
-					
-					// 处理 HTTPS/HTTP 混合内容问题
-					let fetchUrl = url;
-					let useProxy = false;
-					
-					if (window.location.protocol === 'https:' && url.startsWith('http:')) {
-						fetchUrl = url.replace('http:', 'https:');
-						useProxy = true;
-					}
-					
-					let resp;
-					try {
-						resp = await fetch(fetchUrl, { 
-							credentials: 'omit', 
-							cache: 'no-store',
-							mode: 'cors',
-							headers: {
-								'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-								'Referer': 'https://mp.weixin.qq.com'
-							}
-						});
-					} catch (proxyError) {
-						// 如果直接请求失败，尝试使用代理
-						if (useProxy) {
-							setStatus(`图片 ${index + 1} 直接下载失败，尝试使用代理...`);
-							const proxyUrl = `https://images.weserv.nl/?url=${encodeURIComponent(url)}`;
-							resp = await fetch(proxyUrl, { 
-								credentials: 'omit', 
-								cache: 'no-store',
-								mode: 'cors'
-							});
-						} else {
-							throw proxyError;
-						}
-					}
-					
+					const resp = await fetch(url, { credentials: 'omit', cache: 'no-store' });
 					if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 					const blob = await resp.blob();
 					zip.file(name, blob);
 					success++;
 				} catch (e) {
 					console.warn('下载失败', url, e);
-					failed++;
 				}
 			}
 			if (success === 0) {
-				setStatus('打包失败：所有图片下载都失败了，请检查网络连接或稍后重试');
+				setStatus('打包失败：可能被站点的跨域策略限制，建议使用“导出PowerShell下载脚本”');
 				return;
 			}
 			setStatus('正在生成 ZIP...');
 			const content = await zip.generateAsync({ type: 'blob' });
 			downloadBlob(content, 'images.zip');
-			setStatus(`完成：成功打包 ${success}/${urls.length} 张图片${failed > 0 ? `，失败 ${failed} 张` : ''}`);
+			setStatus(`完成：成功打包 ${success}/${urls.length} 张图片`);
 		}
 
 		function setupPreviewImageClicks() {
@@ -612,8 +436,6 @@
 							img.setAttribute('title', `点击下载图片 ${index + 1}`);
 							img.style.border = '2px solid transparent';
 							img.style.transition = 'border-color 0.2s';
-							// 添加 referrerpolicy="no-referrer" 解决微信防盗链问题
-							img.setAttribute('referrerpolicy', 'no-referrer');
 							
 							// 添加悬停效果
 							img.addEventListener('mouseenter', function() {
@@ -681,41 +503,14 @@
 				const ext = guessExtensionFromUrl(url);
 				const filename = `img_${String(index).padStart(3, '0')}${ext}`;
 				
-				// 处理 HTTPS/HTTP 混合内容问题
-				let fetchUrl = url;
-				let useProxy = false;
-				
-				if (window.location.protocol === 'https:' && url.startsWith('http:')) {
-					// 尝试将 HTTP 转换为 HTTPS
-					fetchUrl = url.replace('http:', 'https:');
-					useProxy = true;
-				}
-				
-				let response;
-				try {
-					response = await fetch(fetchUrl, { 
-						credentials: 'omit', 
-						cache: 'no-store',
-						mode: 'cors',
-						headers: {
-							'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-							'Referer': 'https://mp.weixin.qq.com'
-						}
-					});
-				} catch (proxyError) {
-					// 如果直接请求失败，尝试使用代理
-					if (useProxy) {
-						setStatus(`图片 ${index} 直接下载失败，尝试使用代理...`);
-						const proxyUrl = `https://images.weserv.nl/?url=${encodeURIComponent(url)}`;
-						response = await fetch(proxyUrl, { 
-							credentials: 'omit', 
-							cache: 'no-store',
-							mode: 'cors'
-						});
-					} else {
-						throw proxyError;
+				const response = await fetch(url, { 
+					credentials: 'omit', 
+					cache: 'no-store',
+					headers: {
+						'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+						'Referer': 'https://mp.weixin.qq.com'
 					}
-				}
+				});
 				
 				if (!response.ok) {
 					throw new Error(`HTTP ${response.status}`);
@@ -765,40 +560,6 @@
 			setStatus('已导出重写后的 HTML（图片路径指向 images/）');
 		});
 
-		markdownBtn.addEventListener('click', () => {
-			if (!currentImageUrls || currentImageUrls.length === 0) {
-				setStatus('没有可导出的图片');
-				return;
-			}
-			const markdownContent = buildMarkdownContent(currentImageUrls);
-			const blob = new Blob([markdownContent], { type: 'text/markdown;charset=utf-8' });
-			downloadBlob(blob, 'article.md');
-			setStatus('已导出 Markdown 文件（支持 Typora 预览）');
-			
-			// 尝试自动打开 Markdown 编辑器
-			setTimeout(() => {
-				tryOpenMarkdownEditor();
-			}, 1000);
-		});
-
-		function tryOpenMarkdownEditor() {
-			// 检测是否在本地环境
-			if (window.location.protocol === 'file:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-				// 尝试使用自定义协议打开 Typora
-				const typoraUrl = 'typora://open-file/';
-				const link = document.createElement('a');
-				link.href = typoraUrl;
-				link.style.display = 'none';
-				document.body.appendChild(link);
-				link.click();
-				document.body.removeChild(link);
-				
-				setStatus('已尝试打开 Typora，如果没有自动打开，请手动打开 article.md 文件');
-			} else {
-				setStatus('在线环境下无法自动打开本地软件，请手动打开下载的 article.md 文件');
-			}
-		}
-
 		selectAllBtn.addEventListener('click', selectAllImages);
 		deselectAllBtn.addEventListener('click', () => {
 			selectedImages.clear();
@@ -821,7 +582,6 @@
 			zipBtn.disabled = true;
 			psBtn.disabled = true;
 			htmlLocalBtn.disabled = true;
-			markdownBtn.disabled = true;
 			selectAllBtn.disabled = true;
 			deselectAllBtn.disabled = true;
 			downloadSelectedBtn.disabled = true;
