@@ -23,9 +23,9 @@
 ## 快速开始
 
 1. 直接访问 GitHub Pages（推荐）：  
-   [https://yourname.github.io/wechat-article-image-extractor/index.html ](https://github.com/JA-cool/WeChat_Article_Image_Extractor/index.html) 
+   https://github.com/JA-cool/WeChat_Article_Image_Extractor/index.html
    或把 `index.html` 下载到本地双击打开。
 
-2. 把从公众号保存的 `.html` 文件拖进页面，或点击“选择文件”。
+3. 把从公众号保存的 `.html` 文件拖进页面，或点击“选择文件”。
 
-3. 等待解析完成 → 在右侧缩略图墙勾选/全选 → 选择需要的导出方式。
+4. 等待解析完成 → 在右侧缩略图墙勾选/全选 → 选择需要的导出方式。
