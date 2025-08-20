@@ -22,7 +22,7 @@
 
 ## 快速开始
 
-1. 直接访问 GitHub Pages（推荐）：  
+1. 直接访问 GitHub Pages（仅供预览，要正常使用请下载后在本地运行）：  
    [https://github.com/JA-cool/WeChat_Article_Image_Extractor/index.html](https://ja-cool.github.io/WeChat_Article_Image_Extractor/)
    或把 `index.html` 下载到本地双击打开。
 
