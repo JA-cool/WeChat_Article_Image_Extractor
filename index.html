@@ -159,13 +159,15 @@
 				return src;
 			}).filter(Boolean);
 
-			// 为所有图片添加点击事件和样式
+			// 为所有图片添加点击事件和样式，并解决防盗链问题
 			allImgs.forEach((img, index) => {
 				img.style.cursor = 'pointer';
 				img.setAttribute('data-image-index', index);
 				img.setAttribute('title', `点击下载图片 ${index + 1}`);
 				img.style.border = '2px solid transparent';
 				img.style.transition = 'border-color 0.2s';
+				// 添加 referrerpolicy="no-referrer" 解决微信防盗链问题
+				img.setAttribute('referrerpolicy', 'no-referrer');
 				
 				// 添加悬停效果
 				img.addEventListener('mouseenter', function() {
@@ -234,6 +236,8 @@
 				img.src = url;
 				img.alt = `图片 ${index + 1}`;
 				img.title = `点击下载图片 ${index + 1}`;
+				// 添加 referrerpolicy="no-referrer" 解决微信防盗链问题
+				img.setAttribute('referrerpolicy', 'no-referrer');
 				
 				const indexLabel = document.createElement('div');
 				indexLabel.className = 'index';
@@ -376,6 +380,8 @@
 				const local = 'images/img_' + String(i + 1).padStart(3, '0') + ext;
 				imgs[i].setAttribute('src', local);
 				imgs[i].removeAttribute('crossorigin');
+				// 添加 referrerpolicy="no-referrer" 解决微信防盗链问题
+				imgs[i].setAttribute('referrerpolicy', 'no-referrer');
 			}
 			return '<!DOCTYPE html>' + doc.documentElement.outerHTML;
 		}
@@ -436,6 +442,8 @@
 							img.setAttribute('title', `点击下载图片 ${index + 1}`);
 							img.style.border = '2px solid transparent';
 							img.style.transition = 'border-color 0.2s';
+							// 添加 referrerpolicy="no-referrer" 解决微信防盗链问题
+							img.setAttribute('referrerpolicy', 'no-referrer');
 							
 							// 添加悬停效果
 							img.addEventListener('mouseenter', function() {
