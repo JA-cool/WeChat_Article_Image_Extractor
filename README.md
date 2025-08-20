@@ -1,8 +1,3 @@
-下面是一份面向 GitHub 的 README（中英双语），可直接保存为 README.md 放到仓库根目录。  
-如需额外文件（截图、LICENSE、.gitignore 等），请再告诉我。
-
----
-
 # WeChat Article Image Extractor  
 **公众号图文图片一键提取/打包/本地预览工具**
 
@@ -28,7 +23,7 @@
 ## 快速开始
 
 1. 直接访问 GitHub Pages（推荐）：  
-   [https://yourname.github.io/wechat-article-image-extractor/ ](https://github.com/JA-cool/WeChat_Article_Image_Extractor) 
+   [https://yourname.github.io/wechat-article-image-extractor/index.html ](https://github.com/JA-cool/WeChat_Article_Image_Extractor/index.html) 
    或把 `index.html` 下载到本地双击打开。
 
 2. 把从公众号保存的 `.html` 文件拖进页面，或点击“选择文件”。
